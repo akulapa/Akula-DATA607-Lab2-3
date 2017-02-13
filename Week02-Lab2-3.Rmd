@@ -1,0 +1,163 @@
+---
+title: "Week02-Lab2-3"
+author: "Pavan Akula"
+date: "February 10, 2017"
+output: html_document
+---
+
+This hands on lab is designed to demonstrate how to combine data from multiple sources. Data will be used from two different storage's CSV file and MySQL table to generate report.
+
+Libraries used
+
+```{r , echo=TRUE}
+library(DBI)
+library(RMySQL)
+library(plyr)
+```
+
+Read the data from CSV file in *Population* data frame.
+```{r , echo=TRUE}
+population <- read.csv("population.csv",header = TRUE, sep = ",", quote = "\"")
+```
+
+Create connection handle to MySQL Server and database.
+```{r , echo=TRUE}
+dbHandle <- dbConnect(MySQL(), user="root", pwd = "", database = "tb")
+```
+
+Read MySQL table data into *tb* data frame.
+```{r , echo=TRUE}
+tb <- dbReadTable(dbHandle, "tb.tb")
+```
+
+Disconnect from MySQL server and close the connection.
+```{r , echo=TRUE}
+dbClose <- dbDisconnect(dbHandle)
+```
+
+There should two data frames *population* and *tb* visible in the *Environment Tab*.
+
+Check to if any of columns in two data frames has "NA" values. When "NA" values exists, it needs to replaced with valid value, in our case it would be *Zero(0)*. Consider data in *tb data frame* for *country Afghanistan* for *year 2013*, *child* column has values for *female 1749* and *male 1705*. When total cases is calculate *(tb$child + tb$adult + tb$elderly)* it will display "NA" instead of 1749 and 1705 respectively.
+
+```{r , echo=TRUE}
+#Below subset displays values in child, adult, elderly columns as NA for years 1995 and 1996.
+sub.na <- subset(tb,tb$country == "Afghanistan" & (tb$year %in% c(1995, 1996, 1997, 2013)))
+sub.na
+```
+
+```{r , echo=TRUE}
+#Cases column displays "NA" even though clid column has values for year 2013.
+sub.na$cases <- sub.na$child + sub.na$adult + sub.na$elderly
+sub.na
+```
+
+Updation of "NA" can be done in two ways. One column at a time or all coulumns at once.
+
+```{r , echo=TRUE}
+#Remove the data frame sub.na. Instead of remove, short form rm can be used to
+remove(sub.na)
+
+#Updating subset sub.na one column at a time to replace NA with 0.
+sub.na <- subset(tb,tb$country == "Afghanistan" & (tb$year %in% c(1995, 1996, 1997, 2013)))
+sub.na$child[is.na(sub.na$child)] <- 0
+sub.na$adult[is.na(sub.na$adult)] <- 0
+sub.na$elderly[is.na(sub.na$elderly)] <- 0
+sub.na
+
+```
+
+Updation of "NA" all columns at once.
+
+```{r , echo=TRUE}
+#Remove the data frame sub.na. Instead of remove, short form rm can be used to
+remove(sub.na)
+
+#Updating subset sub.na all columns at a time replace NA with 0.
+sub.na <- subset(tb,tb$country == "Afghanistan" & (tb$year %in% c(1995, 1996, 1997, 2013)))
+sub.na[is.na(sub.na)] <- 0
+sub.na
+
+```
+
+Now when *cases* is calculated it will display correct values
+```{r , echo=TRUE}
+#Cases column displays "NA" even though clid column has values for year 2013.
+sub.na$cases <- sub.na$child + sub.na$adult + sub.na$elderly
+sub.na
+
+#Remove temporary data frame.
+rm(sub.na)
+```
+
+Lets do the same on *tb* and *population* data frames.
+```{r , echo=TRUE}
+# tb data frame.
+tb[is.na(tb)] <- 0
+
+#population data frame
+population[is.na(population)] <- 0
+```
+
+Calculate total cases.
+```{r , echo=TRUE}
+# tb data frame.
+tb$cases <- tb$child + tb$adult + tb$elderly
+```
+
+Apply *population* column to *tb* data frame. Calculate *rate = cases/population*
+
+```{r , echo=TRUE}
+#Apply population
+tb.entire.data <- merge(tb, population, by.x=c("country","year"), by.y=c("country","year"))
+
+#Summerize total cases by country and year
+tb.infected.data <- aggregate(tb$cases, by=list(country=tb$country,year=tb$year), FUN=sum)
+names(tb.infected.data)[names(tb.infected.data) == "x"] <- "infected"
+tb.infected.data <- merge(tb.infected.data, population, by.x=c("country","year"), by.y=c("country","year"))
+
+#Calculate the rate
+tb.infected.data$rate <- (tb.infected.data$infected/tb.infected.data$population)
+
+head(tb.infected.data,20)
+```
+
+Since *rate* comes out as very low value, multiplying it with *100000* shows *rates per 100000 population for tb infected population*.
+
+```{r , echo=TRUE}
+#Calculate the rates per 100000 population
+tb.infected.data$rate <- (tb.infected.data$infected/tb.infected.data$population) * 100000
+
+head(tb.infected.data,20)
+```
+
+Finally, get the required data frame.
+
+```{r , echo=TRUE}
+tb.rate.data <- subset(tb.infected.data,select = c(country, year, rate))
+
+#Sample data
+tb.rate.data[seq(1, nrow(tb.rate.data), 100), ]
+```
+
+
+Downstream data analysis and reporting:
+
+Q 1. List top 10 countries with highest infection in the year 2013.
+
+A: These countries need resources to control and prevent the infection. People flying in and out of these countries may require medical exam.
+```{r , echo=TRUE}
+#Get top 10 countries that had higest infection rate per 100000 population in 2013
+tb.top_10_2013.data <- head(arrange(subset(tb.infected.data, tb.infected.data$year == 2013, select = c(country, year, rate)),desc(rate)),10)
+
+head(tb.top_10_2013.data, 10)
+```
+
+Q 2: What is the rate of change year over year per country?
+
+A: This shows how countries are managing the resources to prevent and control infection.
+
+```{r , echo=TRUE}
+#Analyse each country's data for rate of change year or year
+arrange(subset(tb.infected.data, tb.infected.data$country == "Afghanistan", select = c(country, year, rate)),year)
+```
+
